@@ -120,27 +120,36 @@ func (m *InMemoryIndex) Lookup(ctx context.Context, requestKeys []BlockHash,
 	highestHitIdx := 0
 
 	for idx, requestKey := range requestKeys {
-		if pods, found := m.data.Get(requestKey); found { //nolint:nestif // TODO: can this be optimized?
-			if pods == nil || pods.cache.Len() == 0 {
-				traceLogger.Info("no pods found for key, cutting search", "key", requestKey)
-				return podsPerKey, nil // early stop since prefix-chain breaks here
-			}
-
-			highestHitIdx = idx
-
-			if podIdentifierSet.Len() == 0 {
-				// If no pod identifiers are provided, return all pods
-				podsPerKey[requestKey] = pods.cache.Keys()
-			} else {
-				// Filter pods based on the provided pod identifiers
-				for _, pod := range pods.cache.Keys() {
-					if podIdentifierSet.Has(pod.PodIdentifier) {
-						podsPerKey[requestKey] = append(podsPerKey[requestKey], pod)
-					}
-				}
-			}
-		} else {
+		pods, found := m.data.Get(requestKey)
+		if !found {
 			traceLogger.Info("key not found in index", "key", requestKey)
+			continue
+		}
+
+		var keys []PodEntry
+		if pods != nil {
+			pods.mu.Lock()
+			if pods.cache.Len() != 0 {
+				keys = pods.cache.Keys()
+			}
+			pods.mu.Unlock()
+		}
+		if len(keys) == 0 {
+			traceLogger.Info("no pods found for key, cutting search", "key", requestKey)
+			return podsPerKey, nil // early stop since prefix-chain breaks here
+		}
+
+		highestHitIdx = idx
+		if podIdentifierSet.Len() == 0 {
+			// If no pod identifiers are provided, return all pods
+			podsPerKey[requestKey] = keys
+			continue
+		}
+		// Filter pods based on the provided pod identifiers
+		for _, pod := range keys {
+			if podIdentifierSet.Has(pod.PodIdentifier) {
+				podsPerKey[requestKey] = append(podsPerKey[requestKey], pod)
+			}
 		}
 	}
 
