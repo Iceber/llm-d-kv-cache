@@ -27,5 +27,7 @@ func DefaultKVCacheBackendConfig() []*KVCacheBackendConfig {
 	return []*KVCacheBackendConfig{
 		{Name: "gpu", Weight: 1.0},
 		{Name: "cpu", Weight: 0.8},
+		{Name: "shared_storage", Weight: 0.4},
+		{Name: "object_store", Weight: 0.2},
 	}
 }

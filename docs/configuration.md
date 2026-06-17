@@ -88,6 +88,14 @@ Here's a complete configuration example with all options:
     {
       "name": "cpu",
       "weight": 0.8
+    },
+    {
+      "name": "shared_storage",
+      "weight": 0.4
+    },
+    {
+      "name": "object_store",
+      "weight": 0.2
     }
   ]
 }

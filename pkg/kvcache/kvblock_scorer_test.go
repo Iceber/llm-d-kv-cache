@@ -99,6 +99,49 @@ func TestLongestPrefixScorerDifferentTiers(t *testing.T) {
 	}
 }
 
+func TestLongestPrefixScorerDefaultStorageTierWeights(t *testing.T) {
+	scorer, err := kvcache.NewKVBlockScorer(kvcache.DefaultKVBlockScorerConfig())
+	assert.NoError(t, err)
+
+	blockKeys := int64KeysToKVBlockKeys([]uint64{1001, 1002})
+	hitmap := map[kvblock.BlockHash][]kvblock.PodEntry{
+		1001: {
+			{PodIdentifier: podA, DeviceTier: "gpu"},
+			{PodIdentifier: podB, DeviceTier: "shared_storage"},
+		},
+		1002: {
+			{PodIdentifier: podA, DeviceTier: "gpu"},
+			{PodIdentifier: podB, DeviceTier: "shared_storage"},
+		},
+	}
+
+	scored, err := scorer.Score(context.Background(), blockKeys, hitmap)
+	assert.NoError(t, err)
+	assert.InDelta(t, 2.0, scored[podA], 0.0001)
+	assert.InDelta(t, 0.8, scored[podB], 0.0001)
+	assert.Less(t, scored[podB], scored[podA])
+}
+
+func TestLongestPrefixScorerUnknownTierDoesNotScoreAsGPU(t *testing.T) {
+	scorer := &kvcache.LongestPrefixScorer{
+		MediumWeights: map[string]float64{
+			"gpu": 1.0,
+		},
+	}
+	blockKeys := int64KeysToKVBlockKeys([]uint64{1001})
+	hitmap := map[kvblock.BlockHash][]kvblock.PodEntry{
+		1001: {
+			{PodIdentifier: podA, DeviceTier: "unknown-tier"},
+			{PodIdentifier: podB, DeviceTier: "gpu"},
+		},
+	}
+
+	scored, err := scorer.Score(context.Background(), blockKeys, hitmap)
+	assert.NoError(t, err)
+	assert.InDelta(t, 0.0, scored[podA], 0.0001)
+	assert.InDelta(t, 1.0, scored[podB], 0.0001)
+}
+
 func int64KeysToKVBlockKeys(keys []uint64) []kvblock.BlockHash {
 	kvKeys := make([]kvblock.BlockHash, len(keys))
 	for i, key := range keys {

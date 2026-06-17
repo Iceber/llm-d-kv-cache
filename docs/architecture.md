@@ -196,7 +196,7 @@ Pod C:        no    -     -     -     -     → score = 0 blocks (no prefix)
 
 Even if Pod C happened to hold `B3` and `B4`, those entries are unusable without the preceding chain, and the score is zero.
 
-When blocks are stored across memory tiers, each matching block's contribution is weighted by tier. For a block cached on multiple tiers at once, the scorer takes the maximum weight. Defaults are `gpu = 1.0`, `cpu = 0.8`.
+When blocks are stored across memory tiers, each matching block's contribution is weighted by tier. For a block cached on multiple tiers at once, the scorer takes the maximum weight. Defaults are `gpu = 1.0`, `cpu = 0.8`, `shared_storage = 0.4`, and `object_store = 0.2`. Unknown tiers do not contribute to the score unless configured.
 
 -----
 

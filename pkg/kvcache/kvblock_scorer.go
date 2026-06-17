@@ -19,6 +19,7 @@ package kvcache
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/llm-d/llm-d-kv-cache/pkg/kvcache/kvblock"
 )
@@ -28,7 +29,8 @@ type KVScoringStrategy string
 
 const (
 	// LongestPrefixMatch Score by longest consecutive match from start.
-	LongestPrefixMatch KVScoringStrategy = "LongestPrefix"
+	LongestPrefixMatch      KVScoringStrategy = "LongestPrefix"
+	unknownDeviceTierWeight                   = 0.0
 )
 
 // KVBlockScorerConfig holds the configuration for the KVBlockScorer.
@@ -63,7 +65,7 @@ func NewKVBlockScorer(config *KVBlockScorerConfig) (KVBlockScorer, error) {
 		// Build weight map from list of BackendConfigs for efficient lookup
 		weightMap := make(map[string]float64)
 		for _, medium := range config.BackendConfigs {
-			weightMap[medium.Name] = medium.Weight
+			weightMap[strings.ToLower(medium.Name)] = medium.Weight
 		}
 
 		return &LongestPrefixScorer{
@@ -90,9 +92,9 @@ func (s *LongestPrefixScorer) Strategy() KVScoringStrategy {
 // device tiers for the given entries. The caller must clear dst before calling.
 func fillMaxWeights(dst map[string]float64, entries []kvblock.PodEntry, mediumWeights map[string]float64) {
 	for _, entry := range entries {
-		weight := 1.0
+		weight := unknownDeviceTierWeight
 		if mediumWeights != nil {
-			if w, exists := mediumWeights[entry.DeviceTier]; exists {
+			if w, exists := mediumWeights[strings.ToLower(entry.DeviceTier)]; exists {
 				weight = w
 			}
 		}
