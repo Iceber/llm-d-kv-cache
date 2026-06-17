@@ -45,6 +45,8 @@ const (
 	envZMQEndpoint = "ZMQ_ENDPOINT"
 	envZMQTopic    = "ZMQ_TOPIC"
 
+	staticSubscriberID = "static-zmq-subscriber"
+
 	envPoolConcurrency = "POOL_CONCURRENCY"
 	defaultZMQEndpoint = "tcp://localhost:5557"
 	defaultZMQTopic    = "kv@"
@@ -98,13 +100,19 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	// Setup events pool
-	eventsPool, err := setupEventsPool(ctx, kvCacheIndexer.KVBlockIndex())
+	// Setup events pool and static ZMQ subscriber.
+	eventsCfg := getEventsPoolConfig()
+	eventsPool, err := setupEventsPool(ctx, kvCacheIndexer.KVBlockIndex(), eventsCfg)
 	if err != nil {
 		return err
 	}
 	eventsPool.Start(ctx)
-	logger.Info("Events pool started and listening for ZMQ messages")
+	subscriberManager, err := setupEventsSubscriber(ctx, eventsPool, eventsCfg)
+	if err != nil {
+		eventsPool.Shutdown(ctx)
+		return err
+	}
+	logger.Info("Events pool started")
 
 	// Setup HTTP server
 	httpServer := setupUnifiedHTTPEndpoints(ctx, kvCacheIndexer)
@@ -120,14 +128,17 @@ func run(ctx context.Context) error {
 	<-ctx.Done()
 	logger.Info("Shutting down KV-cache service...")
 
-	// Graceful shutdown with timeout
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Graceful shutdown should not inherit ctx cancellation, but should keep ctx values.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer shutdownCancel()
 
-	//nolint:contextcheck // shutdown uses a fresh context intentionally since parent ctx is already cancelled
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error(err, "HTTP server shutdown error")
 	}
+	if subscriberManager != nil {
+		subscriberManager.Shutdown(shutdownCtx)
+	}
+	eventsPool.Shutdown(shutdownCtx)
 
 	return nil
 }
@@ -213,10 +224,8 @@ func setupKVCacheIndexer(ctx context.Context) (*kvcache.Indexer, error) {
 	return kvCacheIndexer, nil
 }
 
-func setupEventsPool(ctx context.Context, kvBlockIndex kvblock.Index) (*kvevents.Pool, error) {
+func setupEventsPool(ctx context.Context, kvBlockIndex kvblock.Index, cfg *kvevents.Config) (*kvevents.Pool, error) {
 	logger := log.FromContext(ctx)
-
-	cfg := getEventsPoolConfig()
 
 	logger.Info("Creating events pool", "config", cfg)
 	tokenProcessor, err := kvblock.NewChunkedTokenDatabase(getTokenProcessorConfig())
@@ -231,6 +240,24 @@ func setupEventsPool(ctx context.Context, kvBlockIndex kvblock.Index) (*kvevents
 	pool := kvevents.NewPool(cfg, kvBlockIndex, tokenProcessor, adapter)
 
 	return pool, nil
+}
+
+func setupEventsSubscriber(
+	ctx context.Context,
+	pool *kvevents.Pool,
+	cfg *kvevents.Config,
+) (*kvevents.SubscriberManager, error) {
+	logger := log.FromContext(ctx)
+
+	subscriberManager := kvevents.NewSubscriberManager(pool)
+	if cfg.ZMQEndpoint != "" && !cfg.DiscoverPods {
+		if err := subscriberManager.EnsureSubscriber(ctx, staticSubscriberID, cfg.ZMQEndpoint, cfg.TopicFilter, false); err != nil {
+			return nil, fmt.Errorf("failed to create static ZMQ subscriber: %w", err)
+		}
+		logger.Info("Static ZMQ subscriber configured", "endpoint", cfg.ZMQEndpoint, "topic", cfg.TopicFilter)
+	}
+
+	return subscriberManager, nil
 }
 
 func setupUnifiedHTTPEndpoints(
