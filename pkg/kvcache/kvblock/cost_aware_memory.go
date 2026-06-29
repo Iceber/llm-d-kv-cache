@@ -297,11 +297,12 @@ func (m *CostAwareMemoryIndex) Lookup(ctx context.Context, requestKeys []BlockHa
 
 			highestHitIdx = idx
 
+			var filteredPods []PodEntry
 			if podIdentifierSet.Len() == 0 {
 				// If no pod identifiers are provided, return all pods
 				pods.cache.Range(func(k, value interface{}) bool {
 					if pod, ok := k.(PodEntry); ok {
-						podsPerKey[key] = append(podsPerKey[key], pod)
+						filteredPods = append(filteredPods, pod)
 					}
 					return true
 				})
@@ -310,14 +311,21 @@ func (m *CostAwareMemoryIndex) Lookup(ctx context.Context, requestKeys []BlockHa
 				pods.cache.Range(func(k, value interface{}) bool {
 					if pod, ok := k.(PodEntry); ok {
 						if podIdentifierSet.Has(pod.PodIdentifier) {
-							podsPerKey[key] = append(podsPerKey[key], pod)
+							filteredPods = append(filteredPods, pod)
 						}
 					}
 					return true
 				})
 			}
+
+			if len(filteredPods) == 0 {
+				traceLogger.Info("no matching pods found for key, cutting search", "key", key)
+				return podsPerKey, nil // early stop since prefix-chain breaks here
+			}
+			podsPerKey[key] = filteredPods
 		} else {
 			traceLogger.Info("key not found in index", "key", key)
+			return podsPerKey, nil // early stop since prefix-chain breaks here
 		}
 	}
 

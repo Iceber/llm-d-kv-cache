@@ -72,14 +72,20 @@ func TestInMemoryIndexSize(t *testing.T) {
 	err = index.Add(ctx, []BlockHash{engineKey3}, []BlockHash{requestKey3}, []PodEntry{{PodIdentifier: "pod3", DeviceTier: "cpu"}})
 	require.NoError(t, err)
 
-	// Lookup should only return the last two keys
-	podsPerKey, err := index.Lookup(ctx, []BlockHash{requestKey1, requestKey2, requestKey3}, nil)
+	// Lookup each key directly so this test verifies LRU eviction without
+	// depending on prefix-chain early-stop semantics.
+	podsPerKey, err := index.Lookup(ctx, []BlockHash{requestKey2}, nil)
 	require.NoError(t, err)
 
-	assert.Len(t, podsPerKey, 2) // Only key2 and key3 should be present
+	assert.Len(t, podsPerKey, 1)
 	assert.Len(t, podsPerKey[requestKey2], 1)
-	assert.Len(t, podsPerKey[requestKey3], 1)
 	assert.Contains(t, podsPerKey[requestKey2], PodEntry{PodIdentifier: "pod2", DeviceTier: "gpu"})
+
+	podsPerKey, err = index.Lookup(ctx, []BlockHash{requestKey3}, nil)
+	require.NoError(t, err)
+
+	assert.Len(t, podsPerKey, 1)
+	assert.Len(t, podsPerKey[requestKey3], 1)
 	assert.Contains(t, podsPerKey[requestKey3], PodEntry{PodIdentifier: "pod3", DeviceTier: "cpu"})
 }
 

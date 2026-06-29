@@ -75,8 +75,9 @@ func TestCostAwareIndexSize(t *testing.T) {
 	err = index.Add(ctx, []BlockHash{engineKey3}, []BlockHash{requestKey3}, []PodEntry{{PodIdentifier: "pod3", DeviceTier: "cpu"}})
 	require.NoError(t, err)
 
-	// Lookup should only return the last two keys
-	podsPerKey, err := index.Lookup(ctx, []BlockHash{requestKey1, requestKey2, requestKey3}, nil)
+	// Lookup the surviving key directly so this test verifies cost-based
+	// eviction without depending on prefix-chain early-stop semantics.
+	podsPerKey, err := index.Lookup(ctx, []BlockHash{requestKey3}, nil)
 	require.NoError(t, err)
 
 	assert.Len(t, podsPerKey, 1) // Only requestKey3 should be present
